@@ -11,6 +11,7 @@ use GuzzleHttp\Psr7\Response;
 use Illuminate\Console\Command;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Request as FacadesRequest;
 use Psr\Http\Client\ClientExceptionInterface;
 use Statamic\Console\EnhancesCommands;
 use Statamic\Console\RunsInPlease;
@@ -116,6 +117,9 @@ class StaticWarm extends Command
             ->merge($this->entries())
             ->merge($this->terms())
             ->merge($this->customRoutes())
+            ->reject(function ($url) {
+                return $this->isExcluded($url);
+            })
             ->unique()
             ->sort()
             ->values();
@@ -186,5 +190,35 @@ class StaticWarm extends Command
         $this->line("\x1B[1A\x1B[2K<info>[✔]</info> Custom routes");
 
         return $routes;
+    }
+
+    protected function isExcluded($url)
+    {
+        $exclusions = collect(config('statamic.static_caching.exclude'), []);
+
+        // Query strings should be ignored.
+        $url = explode('?', $url)[0];
+
+        $url = Str::removeLeft($url, FacadesRequest::root());
+
+        foreach ($exclusions as $excluded) {
+            if (Str::endsWith($excluded, '*') && Str::startsWith($url, substr($excluded, 0, -1))) {
+                return true;
+            }
+
+            if ($url === $excluded) {
+                return true;
+            }
+
+            if (Str::startsWith($excluded, '*') && Str::endsWith($url, substr($excluded, 1))) {
+                return true;
+            }
+
+            if (Str::endsWith($excluded, '*') && Str::startsWith($excluded, '*') && Str::contains($url, substr($excluded, 1, -1))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
